@@ -24,3 +24,5 @@ The following is a list of things that I better write before I forget:
 4. Predict the mobility in CDMX!
 
 5. Find clusters of stations. I remember having to go somewhere else nearby to take or lock a bike.
+
+6. Find the time evolution of usage (total, by sex, etc). This implies downloading more files and devising a way of accessing them in an efficient way, something that, at the moment, have no idea how to do.
