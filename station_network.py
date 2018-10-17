@@ -17,7 +17,6 @@ class Station(object):
         self.station_node = dataframe.loc[self.station_id]['node']
 
 
-
     def shortest_path(self, destination_id):
         """
         Shortest path FROM our station to another specified station
