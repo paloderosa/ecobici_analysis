@@ -21,6 +21,8 @@ The following is a list of things that I better write before I forget:
 
 3. Find a better geographical visualization library, in particular, one that allows me to visualize several routes and do animations of travels. osmnx has been super useful in allowing me to find shortest routes between stations, since I will be assuming that these are the routes taken by riders. But I haven't found a way to show several paths simultaneously.
 
-4. Predict the mobility in CDMX!
+4. Predict the mobility in CDMX! Maybe use a recurrent nn.
 
 5. Find clusters of stations. I remember having to go somewhere else nearby to take or lock a bike.
+
+6. Analyze by user, find out when a user couldn't wake up.

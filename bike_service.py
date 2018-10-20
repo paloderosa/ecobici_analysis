@@ -4,20 +4,38 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
+import os.path
+
+
+def save_graph(osmnx_graph, name):
+    ox.save_graphml(osmnx_graph, filename=name + '.graphml', folder='data')
+    return None
+
+
+def load_graph(name):
+    return ox.load_graphml(name + '.graphml', folder='data')
+
 
 class BikeService(object):
 
-    def __init__(self, location, network_df, activity_df):
+    def __init__(self, name, location, network_df, activity_df, load_saved_graph=True):
         """
         Class for a particular bike service
-        :param network_df: pandas dataframe containing station's information for a particular bike service. We
-        expect it to have name, lat and lon columns, at least.
-        :param location: list of locations recognizable by osmnx from which to define a geographical region
+        :param network_df: pandas dataframe
+            Contains station's information for a particular bike service. We expect it to have name, lat and lon
+            columns, at least, named precisely as 'name','lat' and 'lon'.
+        :param location: list
+            Locations recognizable by osmnx from which to define a geographical region. We build a graph from names
+            using osmnx.
         """
 
-        # related to the entire geographical space
+        # Related to the entire geographical space
         self.location = location
-        self.location_graph = ox.graph_from_place(location)
+        if load_saved_graph and os.path.exists('data/' + name + '.graphml'):
+            self.location_graph = ox.load_graphml(filename=name + '.graphml', folder='data')
+        else:
+            self.location_graph = ox.graph_from_place(location)
+            ox.save_graphml(self.location_graph, filename=name + '.graphml', folder='data')
         self.graph_nodes = pd.Series(self.location_graph.nodes)
 
         # related to the stations
@@ -32,11 +50,14 @@ class BikeService(object):
     def map(self, c='r', s=40):
         """
         Map containing the geographic area with the stations' locations
-        :param c: color for the stations, default red
-        :param s: size for the stations, default 40
+        :param c: color code, optional
+            Color for the stations
+        :param s: int, optional
+            Dot size for the stations
         :return: None
         """
 
+        # selects nodes belonging or not to the stations and colors and scales them differently
         nc = np.where(self.graph_nodes.isin(self.network_df['node']), c, 'g')
         ns = np.where(self.graph_nodes.isin(self.network_df['node']), s, 0)
 
@@ -44,7 +65,62 @@ class BikeService(object):
 
         return None
 
+    def stations_distances(self, distance_type, load_from_saved=True):
+        """
+        Computes distances between all stations.
+        :param load_from_saved: bool, optional
+            whether to load a previously saved graph or to produce a graph from data retrieved from OSM
+        :param distance_type: string
+            street: computes shortest path length
+            straight: computes great circle distance
+        :return: numpy square array of size given by the number of stations
+        """
+        network_size = self.size
+        # network_size = 100
+        distances = np.zeros((network_size, network_size))
+
+        assert distance_type in ['straight', 'street'], 'Only straight or street types possible'
+
+        if distance_type == 'straight':
+            if load_from_saved and os.path.exists('data/straight_distances.npy'):
+                distances = np.load('data/straight_distances.npy')
+            else:
+                for origin_id in range(1, network_size + 1):
+                    for destination_id in range(origin_id, network_size + 1):
+                        distances[origin_id - 1, destination_id - 1] = ox.utils.great_circle_vec(
+                            *tuple(self.network_df.loc[origin_id][['lat', 'lon']]),
+                            *tuple(self.network_df.loc[destination_id][['lat', 'lon']]))
+                        distances[destination_id - 1, origin_id - 1] = distances[origin_id - 1, destination_id - 1]
+
+                np.save('data/straight_distances.npy', distances)
+
+        if distance_type == 'street':
+            if load_from_saved and os.path.exists('data/street_distances.npy'):
+                distances = np.load('data/street_distances.npy')
+            else:
+                for origin_id in range(1, network_size + 1):
+                    for destination_id in range(1, network_size + 1):
+                        origin_node = self.network_df.loc[origin_id]['node']
+                        destination_node = self.network_df.loc[destination_id]['node']
+                        try:
+                            route = nx.shortest_path(self.location_graph, origin_node, destination_node)
+                            distances[origin_id - 1, destination_id - 1] = sum([self.location_graph.get_edge_data(u, v)[0]['length']
+                                                                                for u,v in zip(route, route[1:])])
+                        except:
+                            distances[origin_id - 1, destination_id - 1] = np.nan
+                np.save('data/street_distances.npy', distances)
+
+        return distances
+
+    def cummulative(self, initial_date, final_date, time_window):
+        cumulative_df = self.activity_df[['Fecha_Hora_Retiro', 'Fecha_Hora_Arribo']]
+
     def station(self, station_id):
+        """
+        This allows me to access the outer class from the inner class Station
+        :param station_id:
+        :return: BikeService.Station class instance
+        """
         return BikeService.Station(self, station_id)
 
     class Station(object):
@@ -72,9 +148,11 @@ class BikeService(object):
         def plot_shortest_path(self, destination_id, truncate=True):
             """
             Plots shortest path between two stations as determined by osmnx
-            :param destination_id: destination id for destination station
-            :param truncate: whether to truncate the graph to the smallest box enclosing the path or keep the path
-            embedded in the entire location_graph
+            :param destination_id: int
+                destination id for destination station
+            :param truncate: boolean
+                whether to truncate the graph to the smallest box enclosing the path or keep the path
+                embedded in the entire location_graph
             :return: None
             """
             path = self.shortest_path(destination_id)
@@ -158,9 +236,7 @@ class BikeService(object):
             :return: a osmnx graph
             """
 
-
-            # TODO: add exception to guarantee that at least one of destination or origin is set to True
-            # TODO: rework the conditional logic below
+            assert destination or origin, 'At least destination or origin connections must be chosen'
 
             connection_des, connection_ori = self.connections()
             if destination and origin:
@@ -201,7 +277,7 @@ class BikeService(object):
             :return: None
             """
 
-            # TODO: add an exception to guarantee that at least one of destination or origin is True
+            assert destination or origin, 'At least destination or origin connections must be chosen'
 
             connection_des, connection_ori = self.connections()
             if truncate:
