@@ -112,8 +112,37 @@ class BikeService(object):
 
         return distances
 
-    def cummulative(self, initial_date, final_date, time_window):
-        cumulative_df = self.activity_df[['Fecha_Hora_Retiro', 'Fecha_Hora_Arribo']]
+    def overall_use(self, initial_date, final_date, time_window):
+        """
+
+        :param initial_date:
+        :param final_date:
+        :param time_window:
+        :return:
+        """
+        initial_date = pd.Timestamp(initial_date)
+        final_date = pd.Timestamp(final_date)
+
+        take_df = self.activity_df[(self.activity_df['Fecha_Hora_Retiro'] >= initial_date)
+                                   & (self.activity_df['Fecha_Hora_Retiro'] <= final_date)]
+        lock_df = self.activity_df[(self.activity_df['Fecha_Hora_Arribo'] >= initial_date)
+                                   & (self.activity_df['Fecha_Hora_Arribo'] <= final_date)]
+
+        take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]') // time_window
+        lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]') // time_window
+
+        take_by_time_units = take_df.groupby('time_units').count()\
+            .rename(columns = {'Genero_Usuario': 'viajes cada ' + str(time_window) + ' s'})
+        take_by_time_units['datetime'] = pd.to_timedelta(time_window * take_by_time_units.index, unit='s') \
+                                         + initial_date
+
+        lock_by_time_units = lock_df.groupby('time_units').count()\
+            .rename(columns={'Genero_Usuario': 'devoluciones cada ' + str(time_window) + ' s'})
+        lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index, unit='s') \
+                                         + initial_date
+
+        return {'take': take_by_time_units[['datetime', 'viajes cada ' + str(time_window) + ' s']],
+                'lock': lock_by_time_units[['datetime', 'devoluciones cada ' + str(time_window) + ' s']]}
 
     def station(self, station_id):
         """
@@ -186,9 +215,9 @@ class BikeService(object):
                 - number of travels,
                 - mean travel time,
                 - distance (measured as a segment of a great circle).
-            :return: a tuple of pandas dataframes:
-                1. travels FROM OUR station TO OTHER stations
-                2. travels FROM OTHER stations TO OUR station
+            :return: a dictionary of pandas dataframes:
+                1. to : travels FROM OUR station TO OTHER stations
+                2. from: travels FROM OTHER stations TO OUR station
             """
 
             from_station = self.bike_service_instance.activity_df[
@@ -223,9 +252,8 @@ class BikeService(object):
                                          *tuple(self.bike_service_instance.network_df.loc[self.station_id][['lat', 'lon']]),
                                          *tuple(self.bike_service_instance.network_df.loc[origin_id][['lat', 'lon']]))])
 
-            return (
-                pd.DataFrame(des_list, columns=['Destino', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']),
-                pd.DataFrame(ori_list, columns=['Origen', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']))
+            return {'to': pd.DataFrame(des_list, columns=['Destino', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']),
+                    'from': pd.DataFrame(ori_list, columns=['Origen', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia'])}
 
         def connections_subgraph(self, destination=True, origin=True):
             """
