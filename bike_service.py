@@ -7,31 +7,32 @@ import pandas as pd
 import os.path
 
 
-def save_graph(osmnx_graph, name):
-    ox.save_graphml(osmnx_graph, filename=name + '.graphml', folder='data')
-    return None
-
-
-def load_graph(name):
-    return ox.load_graphml(name + '.graphml', folder='data')
-
-
 class BikeService(object):
 
-    def __init__(self, name, location, network_df, activity_df, load_saved_graph=True):
+    def __init__(self, name, location, network_df, activity_df, load_from_saved=True):
         """
-        Class for a particular bike service
+
+        :param name: string
+            Name for the network.
+        :param location: list
+            List of locations from which osmnx can retrieve geographical data.
         :param network_df: pandas dataframe
             Contains station's information for a particular bike service. We expect it to have name, lat and lon
             columns, at least, named precisely as 'name','lat' and 'lon'.
-        :param location: list
-            Locations recognizable by osmnx from which to define a geographical region. We build a graph from names
-            using osmnx.
+        :param activity_df: pandas dataframe
+            Contains the activity over the bike network. At the moment, we are using the format as well as the column
+            names from the Ecobici service. We require that it contains information for the datetime the bike is taken
+            and locked.
+        :param load_from_saved: bool, optional, default True
+            If False or it has not been saved to 'data/name.graphml' before, the geographical data is retrieved by
+            osmnx and saved to 'data/name.graphml'. If True, this data is loaded instead. It is highly likely that the
+            geographical data in OSM is valid and unchanged for a time span much larger than the time span between
+            consecutive runs.
         """
 
-        # Related to the entire geographical space
+        # related to the entire geographical space.
         self.location = location
-        if load_saved_graph and os.path.exists('data/' + name + '.graphml'):
+        if load_from_saved and os.path.exists('data/' + name + '.graphml'):
             self.location_graph = ox.load_graphml(filename=name + '.graphml', folder='data')
         else:
             self.location_graph = ox.graph_from_place(location)
@@ -47,9 +48,12 @@ class BikeService(object):
         # related to the activity
         self.activity_df = activity_df
 
+        # internal workings
+        self.__load_from_saved = load_from_saved
+
     def map(self, c='r', s=40):
         """
-        Map containing the geographic area with the stations' locations
+        Plot containing the geographic area with the stations' locations contained in self.location_graph
         :param c: color code, optional
             Color for the stations
         :param s: int, optional
@@ -65,16 +69,17 @@ class BikeService(object):
 
         return None
 
-    def stations_distances(self, distance_type, load_from_saved=True):
+    def stations_distances(self, distance_type):
         """
-        Computes distances between all stations.
-        :param load_from_saved: bool, optional
-            whether to load a previously saved graph or to produce a graph from data retrieved from OSM
+        Computes distances between all stations. If the data retrieved from OSM remains unchanged, then the distances
+        computed remain unchanged too. Therefore, computing distances depends on the value of self.__load_from_saved.
+        If true, the saved data is loaded, if False the data is computed and saved.
         :param distance_type: string
             street: computes shortest path length
             straight: computes great circle distance
         :return: numpy square array of size given by the number of stations
         """
+
         network_size = self.size
         # network_size = 100
         distances = np.zeros((network_size, network_size))
@@ -82,7 +87,7 @@ class BikeService(object):
         assert distance_type in ['straight', 'street'], 'Only straight or street types possible'
 
         if distance_type == 'straight':
-            if load_from_saved and os.path.exists('data/straight_distances.npy'):
+            if self.__load_from_saved and os.path.exists('data/straight_distances.npy'):
                 distances = np.load('data/straight_distances.npy')
             else:
                 for origin_id in range(1, network_size + 1):
@@ -95,7 +100,7 @@ class BikeService(object):
                 np.save('data/straight_distances.npy', distances)
 
         if distance_type == 'street':
-            if load_from_saved and os.path.exists('data/street_distances.npy'):
+            if self.__load_from_saved and os.path.exists('data/street_distances.npy'):
                 distances = np.load('data/street_distances.npy')
             else:
                 for origin_id in range(1, network_size + 1):
@@ -112,42 +117,52 @@ class BikeService(object):
 
         return distances
 
-    def overall_use(self, initial_date, final_date, time_window):
+    def activity_ts(self, initial_date, final_date, time_window):
+        """
+        Take the activity dataframe over a specified time period and produce a time series of bikes being taken and
+        locked in intervals of some duration
+        :param initial_date: string
+            In the format 'dd-mm-yyyy'
+        :param final_date: string
+            In the format 'dd-mm-yyyy'
+        :param time_window: int
+            Duration over which we aggregate activity. Specified in seconds.
+        :return: dictionary of pandas dataframes
+            'take': dataframe of bikes being taken in an interval over consecutive intervals. Columns are
+                    ['time_units','datetime','viajes cada ' + str(time_window) + ' s']
+            'lock': dataframe of bikes being locked in an interval over consecutive intervals. Columns are
+                    ['time_units','datetime','devoluciones cada ' + str(time_window) + ' s']
         """
 
-        :param initial_date:
-        :param final_date:
-        :param time_window:
-        :return:
-        """
         initial_date = pd.Timestamp(initial_date)
         final_date = pd.Timestamp(final_date)
 
         take_df = self.activity_df[(self.activity_df['Fecha_Hora_Retiro'] >= initial_date)
-                                   & (self.activity_df['Fecha_Hora_Retiro'] <= final_date)]
+                              & (self.activity_df['Fecha_Hora_Retiro'] <= final_date)]
         lock_df = self.activity_df[(self.activity_df['Fecha_Hora_Arribo'] >= initial_date)
-                                   & (self.activity_df['Fecha_Hora_Arribo'] <= final_date)]
+                              & (self.activity_df['Fecha_Hora_Arribo'] <= final_date)]
 
         take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]') // time_window
         lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]') // time_window
 
         take_by_time_units = take_df.groupby('time_units').count()\
-            .rename(columns = {'Genero_Usuario': 'viajes cada ' + str(time_window) + ' s'})
+            .rename(columns = {'Genero_Usuario': 'retiros (' + str(time_window) + ' s)'})
         take_by_time_units['datetime'] = pd.to_timedelta(time_window * take_by_time_units.index, unit='s') \
                                          + initial_date
 
         lock_by_time_units = lock_df.groupby('time_units').count()\
-            .rename(columns={'Genero_Usuario': 'devoluciones cada ' + str(time_window) + ' s'})
+            .rename(columns={'Genero_Usuario': 'arribos (' + str(time_window) + ' s)'})
         lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index, unit='s') \
                                          + initial_date
 
-        return {'take': take_by_time_units[['datetime', 'viajes cada ' + str(time_window) + ' s']],
-                'lock': lock_by_time_units[['datetime', 'devoluciones cada ' + str(time_window) + ' s']]}
+        return {'take': take_by_time_units[['datetime', 'retiros (' + str(time_window) + ' s)']],
+                'lock': lock_by_time_units[['datetime', 'arribos (' + str(time_window) + ' s)']]}
+
 
     def station(self, station_id):
         """
         This allows me to access the outer class from the inner class Station
-        :param station_id:
+        :param station_id: int
         :return: BikeService.Station class instance
         """
         return BikeService.Station(self, station_id)
@@ -252,8 +267,10 @@ class BikeService(object):
                                          *tuple(self.bike_service_instance.network_df.loc[self.station_id][['lat', 'lon']]),
                                          *tuple(self.bike_service_instance.network_df.loc[origin_id][['lat', 'lon']]))])
 
-            return {'to': pd.DataFrame(des_list, columns=['Destino', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']),
-                    'from': pd.DataFrame(ori_list, columns=['Origen', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia'])}
+            return {'to': pd.DataFrame(des_list,
+                                       columns=['Destino', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']),
+                    'from': pd.DataFrame(ori_list,
+                                         columns=['Origen', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia'])}
 
         def connections_subgraph(self, destination=True, origin=True):
             """
@@ -266,13 +283,14 @@ class BikeService(object):
 
             assert destination or origin, 'At least destination or origin connections must be chosen'
 
-            connection_des, connection_ori = self.connections()
+            connections = self.connections()
+            
             if destination and origin:
-                connections_nodes = pd.concat([connection_des['node'], connection_ori['node']])
+                connections_nodes = pd.concat([connections['to']['node'], connections['from']['node']])
             elif destination:
-                connections_nodes = connection_des['node']
+                connections_nodes = connections['to']['node']
             elif origin:
-                connections_nodes = connection_ori['node']
+                connections_nodes = connections['from']['node']
 
             if connections_nodes.shape[0] == 0:
                 sub_graph = ox.truncate_graph_dist(self.bike_service_instance.location_graph, self.station_node, 1000)
@@ -307,7 +325,8 @@ class BikeService(object):
 
             assert destination or origin, 'At least destination or origin connections must be chosen'
 
-            connection_des, connection_ori = self.connections()
+            connections = self.connections()
+            
             if truncate:
                 current_graph = self.connections_subgraph(destination, origin)
             else:
@@ -318,12 +337,12 @@ class BikeService(object):
             nc = ['gray'] * len(graph_nodes)
             ns = [0] * len(graph_nodes)
 
-            for index, node in connection_des.iterrows():
+            for index, node in connections['to'].iterrows():
                 node_index = graph_nodes[graph_nodes == node['node']].index[0]
                 nc[node_index] = 'blue'
                 ns[node_index] = node['Numero de Viajes']
 
-            for index, node in connection_ori.iterrows():
+            for index, node in connections['from'].iterrows():
                 node_index = graph_nodes[graph_nodes == node['node']].index[0]
                 if nc[node_index] == 'blue':
                     nc[node_index] = 'brown'
@@ -338,3 +357,49 @@ class BikeService(object):
             ox.plot_graph(current_graph, fig_height=30, node_size=ns, node_color=nc, node_zorder=2)
 
             return None
+
+        def activity_ts(self, initial_date, final_date, time_window):
+            """
+            Take the activity dataframe for a particular station over a specified time period and produce a time series
+            of bikes being taken and locked in intervals of some duration
+            :param initial_date: string
+                In the format 'dd-mm-yyyy'
+            :param final_date: string
+                In the format 'dd-mm-yyyy'
+            :param time_window: int
+                Duration over which we aggregate activity. Specified in seconds.
+            :return: dictionary of pandas dataframes
+                'take': dataframe of bikes being taken in an interval over consecutive intervals. Columns are
+                        ['time_units','datetime','viajes cada ' + str(time_window) + ' s']
+                'lock': dataframe of bikes being locked in an interval over consecutive intervals. Columns are
+                        ['time_units','datetime','devoluciones cada ' + str(time_window) + ' s']
+            """
+
+            initial_date = pd.Timestamp(initial_date)
+            final_date = pd.Timestamp(final_date)
+
+            take_df = self.bike_service_instance.activity_df[
+                (self.bike_service_instance.activity_df['Ciclo_Estacion_Retiro'] == self.station_id) &
+                (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] >= initial_date) &
+                (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] <= final_date)]
+
+            lock_df = self.bike_service_instance.activity_df[
+                (self.bike_service_instance.activity_df['Ciclo_Estacion_Arribo'] == self.station_id) &
+                (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] >= initial_date) &
+                (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] <= final_date)]
+
+            take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]')//time_window
+            lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]')//time_window
+
+            take_by_time_units = take_df.groupby('time_units').count()\
+                .rename(columns={'Genero_Usuario': 'retiros (' + str(time_window) + ' s)'})
+            take_by_time_units['datetime'] = pd.to_timedelta(time_window * take_by_time_units.index, unit='s') \
+                                             + initial_date
+
+            lock_by_time_units = lock_df.groupby('time_units').count() \
+                .rename(columns={'Genero_Usuario': 'arribos (' + str(time_window) + ' s)'})
+            lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index, unit='s') \
+                                             + initial_date
+
+            return {'take': take_by_time_units[['datetime', 'retiros (' + str(time_window) + ' s)']],
+                    'lock': lock_by_time_units[['datetime', 'arribos (' + str(time_window) + ' s)']]}
