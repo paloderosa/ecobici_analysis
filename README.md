@@ -15,11 +15,11 @@ d. Read the geographic data science literature on related analysis and build on 
 
 The following is a list of things that I better write before I forget:
 
-1. Visualize use of bikes by day of the week.
+1. Visualize use of bikes by day of the week. DONE.
 
-2. Find cumulative use for each station.
+2. Find cumulative use for each station. DONE
 
-3. Find a better geographical visualization library, in particular, one that allows me to visualize several routes and do animations of travels. osmnx has been super useful in allowing me to find shortest routes between stations, since I will be assuming that these are the routes taken by riders. But I haven't found a way to show several paths simultaneously.
+3. Find a better geographical visualization library, in particular, one that allows me to visualize several routes and do animations of travels. osmnx has been super useful in allowing me to find shortest routes between stations, since I will be assuming that these are the routes taken by riders. But I haven't found a way to show several paths simultaneously. PLOTLY DASH CHOSEN. LEAFLET CHOSEN.
 
 4. Predict the mobility in CDMX! Maybe use a recurrent nn.
 

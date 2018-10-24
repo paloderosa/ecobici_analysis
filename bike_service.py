@@ -4,6 +4,8 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
+import random
+
 import os.path
 
 
@@ -38,6 +40,7 @@ class BikeService(object):
             self.location_graph = ox.graph_from_place(location)
             ox.save_graphml(self.location_graph, filename=name + '.graphml', folder='data')
         self.graph_nodes = pd.Series(self.location_graph.nodes)
+        self.name = name
 
         # related to the stations
         self.network_df = network_df[['name', 'lat', 'lon']].copy()
@@ -47,11 +50,13 @@ class BikeService(object):
 
         # related to the activity
         self.activity_df = activity_df
+        self.activity_df['Fecha_Hora_Arribo'] = pd.to_datetime(self.activity_df['Fecha_Hora_Arribo'])
+        self.activity_df['Fecha_Hora_Retiro'] = pd.to_datetime(self.activity_df['Fecha_Hora_Retiro'])
 
         # internal workings
         self.__load_from_saved = load_from_saved
 
-    def map(self, c='r', s=40):
+    def map(self, c='r', s=100, save = False):
         """
         Plot containing the geographic area with the stations' locations contained in self.location_graph
         :param c: color code, optional
@@ -64,8 +69,8 @@ class BikeService(object):
         # selects nodes belonging or not to the stations and colors and scales them differently
         nc = np.where(self.graph_nodes.isin(self.network_df['node']), c, 'g')
         ns = np.where(self.graph_nodes.isin(self.network_df['node']), s, 0)
-
-        ox.plot_graph(self.location_graph, fig_height=30, node_size=ns, node_color=nc, node_zorder=2)
+        ox.plot_graph(self.location_graph, fig_height = 50, node_size = ns, node_color = nc, node_zorder = 2, edge_alpha = 0.5,
+        save = save, filename = self.name + '_map', dpi = 100, edge_color = 'white', bgcolor = 'black')
 
         return None
 
@@ -94,7 +99,8 @@ class BikeService(object):
                     for destination_id in range(origin_id, network_size + 1):
                         distances[origin_id - 1, destination_id - 1] = ox.utils.great_circle_vec(
                             *tuple(self.network_df.loc[origin_id][['lat', 'lon']]),
-                            *tuple(self.network_df.loc[destination_id][['lat', 'lon']]))
+                            *tuple(self.network_df.loc[destination_id][['lat', 'lon']])
+                        )
                         distances[destination_id - 1, origin_id - 1] = distances[origin_id - 1, destination_id - 1]
 
                 np.save('data/straight_distances.npy', distances)
@@ -113,9 +119,70 @@ class BikeService(object):
                                                                                 for u,v in zip(route, route[1:])])
                         except:
                             distances[origin_id - 1, destination_id - 1] = np.nan
+
                 np.save('data/street_distances.npy', distances)
 
         return distances
+
+    def voronoi_cells_df(self):
+        """
+        Determines to which Voronoi cell around a particular bike station a node in the location_graph belongs.
+        The distance to which the Voronoi cells are computed is the shortest path length in the direction from a
+        particular node to the bike station. This might be useful when deciding, for example, in which station should
+        you lock the bike you are using. If self.__load_from_saved & 'data/voronoi_df.csv' is False, then this method
+        should compute the information in the dataframe, otherwise the information should be loaded from disk.
+        :return: pandas dataframe with columns:
+            node: integer, the node number
+            nearest_station: integer, the station's id
+            distance: shortest path length from node to station
+        """
+        if self.__load_from_saved and os.path.exists('data/voronoi_df.csv'):
+            voronoi_df = pd.read_csv('data/voronoi_df.csv', index_col=0)
+        else:
+            distances = np.zeros((self.graph_nodes.shape[0], self.size))
+            for index in np.arange(self.graph_nodes.shape[0]):
+                for destination_id in range(1, self.size + 1):
+                    origin_node = self.graph_nodes.iloc[index]
+                    destination_node = self.network_df.loc[destination_id]['node']
+                    try:
+                        route = nx.shortest_path(self.location_graph, origin_node, destination_node)
+                        distances[index, destination_id - 1] = sum([self.location_graph.get_edge_data(u, v)[0]['length']
+                                                                    for u, v in zip(route, route[1:])])
+                    except:
+                        distances[index, destination_id - 1] = np.nan
+
+            mask = np.all(np.isnan(distances), axis=1)
+            nodes = self.graph_nodes[~mask]
+            distances = distances[~mask]
+
+            min_distances = np.nanmin(distances, axis=1)
+            closest_stations = np.nanargmin(distances, axis=1) + 1
+
+            voronoi_df = pd.concat([pd.Series(nodes, index=nodes.index, name='node'),
+                                    pd.Series(closest_stations, index=nodes.index, name='nearest station'),
+                                    pd.Series(min_distances, index=nodes.index, name='distances')],
+                                   axis=1)
+
+            voronoi_df.to_csv('data/voronoi_df.csv')
+
+        return voronoi_df
+
+
+    def voronoi_plot(self, save = False, seed = None):
+        voronoi_df = self.voronoi_cells_df()
+        number_of_colors = self.size
+
+        random.seed(seed)
+        color = ["#" + ''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+                 for i in range(number_of_colors)]
+
+        nc = ['gray'] * len(self.graph_nodes)
+        for index, closest_station_data in voronoi_df.iterrows():
+            nc[index] = color[int(closest_station_data['nearest station']) - 1]
+        ox.plot_graph(self.location_graph, fig_height=50, node_size=100, node_color=nc,node_zorder=2, edge_alpha=0.5,
+                      save=save, filename='voronoi_cdmx', dpi=100, edge_color='white', bgcolor='black')
+        return None
+
 
     def activity_ts(self, initial_date, final_date, time_window):
         """
@@ -138,9 +205,9 @@ class BikeService(object):
         final_date = pd.Timestamp(final_date)
 
         take_df = self.activity_df[(self.activity_df['Fecha_Hora_Retiro'] >= initial_date)
-                              & (self.activity_df['Fecha_Hora_Retiro'] <= final_date)]
+                                   & (self.activity_df['Fecha_Hora_Retiro'] <= final_date)]
         lock_df = self.activity_df[(self.activity_df['Fecha_Hora_Arribo'] >= initial_date)
-                              & (self.activity_df['Fecha_Hora_Arribo'] <= final_date)]
+                                   & (self.activity_df['Fecha_Hora_Arribo'] <= final_date)]
 
         take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]') // time_window
         lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]') // time_window
@@ -194,7 +261,7 @@ class BikeService(object):
             Plots shortest path between two stations as determined by osmnx
             :param destination_id: int
                 destination id for destination station
-            :param truncate: boolean
+            :param truncate: boolean, optional, default True
                 whether to truncate the graph to the smallest box enclosing the path or keep the path
                 embedded in the entire location_graph
             :return: None
