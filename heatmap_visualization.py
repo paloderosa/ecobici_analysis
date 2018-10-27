@@ -17,18 +17,6 @@ delegaciones = ['Cuauhtemoc, Mexico City, Mexico',
 network_df = pd.read_csv('data/ecobici_stations.csv', index_col=0)
 
 activity_df = pd.read_csv('data/2018-08.csv', index_col=0)
-activity_df_take = activity_df[activity_df['Fecha_Retiro']=='01/08/2018'].groupby('Ciclo_Estacion_Retiro').count()
-activity_df_lock = activity_df[activity_df['Fecha_Arribo']=='01/08/2018'].groupby('Ciclo_Estacion_Arribo').count()
-
-sizes_take = np.zeros(480)
-sizes_lock = np.zeros(480)
-
-for i in range(1,481):
-    if i in activity_df_take.index:
-        sizes_take[i-1] = activity_df_take.at[i,'Genero_Usuario']
-
-    if i in activity_df_lock.index:
-        sizes_lock[i-1] = activity_df_lock.at[i,'Genero_Usuario']
 
 distances = np.load('data/street_distances.npy')
 
@@ -36,11 +24,7 @@ distances = np.load('data/street_distances.npy')
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 app.layout = html.Div(children=[
-    html.H1(children='Ecobici'),
-
-    html.Div(children='''
-        Datos abiertos de Ecobici.
-    '''),
+    html.H1(children='Ecobici: datos abiertos'),
 
     html.Div([
         html.Div(
@@ -78,43 +62,7 @@ app.layout = html.Div(children=[
         ),
 
         html.Div(
-            dcc.Graph(id = 'routes',
-                      figure = go.Figure(
-                          data = [go.Scattermapbox(lat=network_df['lat'],
-                                                   lon=network_df['lon'],
-                                                   mode='markers',
-                                                   marker=dict(size=sizes_take//10,
-                                                               color= '#FF1A1A',
-                                                               opacity = 0.3),
-                                                   text=network_df['name'],
-                                                   name='Préstamos'
-                                                   ),
-                                  go.Scattermapbox(lat=network_df['lat'],
-                                                   lon=network_df['lon'],
-                                                   mode='markers',
-                                                   marker=dict(size=sizes_lock//10,
-                                                               color= '#FF9D1A',
-                                                               opacity = 0.3),
-                                                   text=network_df['name'],
-                                                   name='Devoluciones'
-                                                   )
-                                  ],
-                          layout = go.Layout(autosize=False,
-                                             width=1000,
-                                             height=800,
-                                             hovermode='closest',
-                                             mapbox=dict(accesstoken=mapbox_access_token,
-                                                         bearing=0,
-                                                         center=dict(
-                                                             lat=19.40,
-                                                             lon=-99.16
-                                                         ),
-                                                         pitch=0,
-                                                         zoom=12.1,
-                                                         style='light'
-                                                         ),
-                                             )
-                      )
+            dcc.Graph(id = 'routes'
             ), style={'width': '52%', 'padding': '0 20', 'display': 'inline-block'}
         )
     ], style = {'height': '800px', 'width': '100%'}
@@ -122,7 +70,59 @@ app.layout = html.Div(children=[
 ], style = {'width': '100%', 'margin': 'auto', 'position': 'relative'}
 )
 
+@app.callback(
+    dash.dependencies.Output('routes', 'figure'),
+    [dash.dependencies.Input('crossfilter-year--slider', 'value')])
+def update_graph(day_value):
+    activity_df_take = activity_df[activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/08/2018'].groupby('Ciclo_Estacion_Retiro').count()
+    activity_df_lock = activity_df[activity_df['Fecha_Arribo'] == '{:02d}'.format(day_value) + '/08/2018'].groupby('Ciclo_Estacion_Arribo').count()
 
+    sizes_take = np.zeros(480)
+    sizes_lock = np.zeros(480)
+
+    for i in range(1, 481):
+        if i in activity_df_take.index:
+            sizes_take[i - 1] = activity_df_take.at[i, 'Genero_Usuario']
+
+        if i in activity_df_lock.index:
+            sizes_lock[i - 1] = activity_df_lock.at[i, 'Genero_Usuario']
+
+    return go.Figure(
+        data = [go.Scattermapbox(lat=network_df['lat'],
+                                 lon=network_df['lon'],
+                                 mode='markers',
+                                 marker=dict(size=sizes_take//10,
+                                             color= '#FF1A1A',
+                                             opacity = 0.3),
+                                 text=network_df['name'],
+                                 name='Préstamos'
+                                 ),
+                go.Scattermapbox(lat=network_df['lat'],
+                                 lon=network_df['lon'],
+                                 mode='markers',
+                                 marker=dict(size=sizes_lock//10,
+                                             color= '#FF9D1A',
+                                             opacity = 0.3),
+                                 text=network_df['name'],
+                                 name='Devoluciones'
+                                 )
+                ],
+        layout = go.Layout(autosize=False,
+                           width=1000,
+                           height=800,
+                           hovermode='closest',
+                           mapbox=dict(accesstoken=mapbox_access_token,
+                                       bearing=0,
+                                       center=dict(
+                                           lat=19.404,
+                                           lon=-99.17
+                                       ),
+                                       pitch=0,
+                                       zoom=12.1,
+                                       style='light'
+                                       ),
+                           )
+    )
 
 if __name__ == '__main__':
     app.run_server(debug=True)
