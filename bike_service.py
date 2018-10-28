@@ -40,6 +40,7 @@ class BikeService(object):
             self.location_graph = ox.graph_from_place(location)
             ox.save_graphml(self.location_graph, filename=name + '.graphml', folder='data')
         self.graph_nodes = pd.Series(self.location_graph.nodes)
+        self.graph_node_data = ox.graph_to_gdfs(self.location_graph, edges=False)
         self.name = name
 
         # related to the stations
@@ -253,8 +254,24 @@ class BikeService(object):
             :return: shortest path specified as a list of nodes
             """
             destination_node = self.bike_service_instance.network_df.loc[destination_id]['node']
+            try:
+                route = nx.shortest_path(self.bike_service_instance.location_graph, self.station_node, destination_node)
+            except:
+                route = [self.station_node]
+            return route
 
-            return nx.shortest_path(self.bike_service_instance.location_graph, self.station_node, destination_node)
+        def shortest_path_json(self, destination_id):
+            path_nodes = self.shortest_path(destination_id)
+            node_data = ox.graph_to_gdfs(self.bike_service_instance.location_graph, edges=False).loc[path_nodes][['x', 'y']]
+            node_dict = {'type': 'Feature',
+                         'properties': {},
+                         'geometry': {'type': 'LineString',
+                                      'coordinates': node_data.values.tolist()
+                                      }
+                         }
+
+            return node_dict
+
 
         def plot_shortest_path(self, destination_id, truncate=True):
             """
