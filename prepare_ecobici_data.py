@@ -50,6 +50,7 @@ def preprocess_travel_data():
 
     ecobici_stations = pd.read_csv('data/ecobici_stations.csv', index_col=0)
     for name in sorted(glob.glob('raw_data/????-??.csv')):
+        print('Processing ' + name)
         if not os.path.exists('data/' + name.split('/')[1]):
             travel_data = pd.read_csv(name)
             travel_data['Genero_Usuario'] = travel_data.Genero_Usuario.astype('category')
@@ -66,6 +67,8 @@ def preprocess_travel_data():
                                                               travel_data['Hora_Retiro'], dayfirst=True)
             travel_data['Tiempo_Transcurrido'] = (travel_data['Fecha_Hora_Arribo'] - travel_data['Fecha_Hora_Retiro'])\
                 .astype('timedelta64[s]')
+            # We no longer need separate date AND time columns
+            travel_data.drop(['Fecha_Retiro','Hora_Retiro','Fecha_Arribo','Hora_Arribo'], axis=1, inplace=True)
             travel_data.to_csv('data/' + name.split('/')[1])
 
     return None
