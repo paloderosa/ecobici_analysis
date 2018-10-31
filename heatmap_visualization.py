@@ -4,6 +4,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.graph_objs as go
 
+import json
+
 from bike_service import *
 
 
@@ -27,9 +29,11 @@ station_names = network_df['name']
 station_names = station_names.apply(lambda name: ' '.join(name.split()[1:]))
 heatmap_text = [['de ' + station_names.loc[j] + ' a ' + station_names.loc[i] for j in range(1,481)] for i in range(1,481)]
 
+with open('data.json') as infile:
+    shortest_routes = json.load(infile)
 
 # we load the ecobici activity data
-activity_df = pd.read_csv('data/2018-08.csv', index_col=0)
+activity_df = pd.read_csv('data/2018-01.csv', index_col=0)
 
 
 """
@@ -92,9 +96,6 @@ app.layout = html.Div(children=[
             style={'width': '42%', 'padding': '0 20', 'display': 'inline-block'}
         ),
 
-    #html.Div(id = 'test',
-    #         style={'width': '52%', 'padding': '0 20', 'display': 'inline-block'},
-    #         ),
 
         html.Div([
             dcc.Graph(id = 'shortest_routes',
@@ -136,12 +137,79 @@ app.layout = html.Div(children=[
 )
 
 
+
+@app.callback(
+    dash.dependencies.Output('shortest_routes', 'figure'),
+    #dash.dependencies.Output('test', 'children'),
+    [dash.dependencies.Input('heatmap', 'clickData')])
+def show_shortest_path(path_info):
+    if path_info is not None:
+        origin_id = path_info['points'][0]['x']+1
+        destination_id = path_info['points'][0]['y']+1
+
+        opacity = 0.9
+
+        size = 10
+
+        lats = network_df.loc[[origin_id,destination_id], 'lat']
+        lons = network_df.loc[[origin_id,destination_id], 'lon']
+
+    else:
+        origin_id, destination_id = tuple(np.random.randint(1,480,2))
+
+        opacity = 0.9
+
+        size = 10
+
+        lats = network_df.loc[[origin_id, destination_id], 'lat']
+        lons = network_df.loc[[origin_id, destination_id], 'lon']
+
+    return go.Figure(
+        data = [go.Scattermapbox(lat = lats,
+                                 #lat=network_df['lat'],
+                                 lon = lons,
+                                 #lon=network_df['lon'],
+                                 mode='markers',
+                                 marker=dict(size=size,
+                                             color= '#FF9D1A',
+                                             opacity = opacity),
+                                 text=network_df['name'],
+                                 name='Préstamos'
+                                 )
+                ],
+        layout = go.Layout(margin=dict(t=60,l = 60, r=60, b=60),
+                           autosize=False,
+                           width=1000,
+                           height=800,
+                           hovermode='closest',
+                           mapbox=dict(accesstoken=mapbox_access_token,
+                                       layers =[dict(sourcetype = 'geojson',
+                                                     source = shortest_routes[str(origin_id) + ' to ' + str(destination_id)],
+                                                     color='#FF9D1A',
+                                                     opacity = 0.5,
+                                                     type = 'line',
+                                                     line=dict(width=7),
+                                                     )
+                                                ],
+                                       bearing=0,
+                                       center=dict(
+                                           lat=19.404,
+                                           lon=-99.17
+                                       ),
+                                       pitch=0,
+                                       zoom=12.2,
+                                       style='light'
+                                       ),
+                           )
+    )
+
+
 @app.callback(
     dash.dependencies.Output('overall_activity', 'figure'),
     [dash.dependencies.Input('crossfilter-year--slider', 'value')])
 def show_activity(day_value):
-    activity_df_take = activity_df[activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/08/2018'].groupby('Ciclo_Estacion_Retiro').count()
-    activity_df_lock = activity_df[activity_df['Fecha_Arribo'] == '{:02d}'.format(day_value) + '/08/2018'].groupby('Ciclo_Estacion_Arribo').count()
+    activity_df_take = activity_df[activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/01/2018'].groupby('Ciclo_Estacion_Retiro').count()
+    activity_df_lock = activity_df[activity_df['Fecha_Arribo'] == '{:02d}'.format(day_value) + '/01/2018'].groupby('Ciclo_Estacion_Arribo').count()
 
     sizes_take = np.zeros(480)
     sizes_lock = np.zeros(480)
@@ -179,70 +247,6 @@ def show_activity(day_value):
                            height=800,
                            hovermode='closest',
                            mapbox=dict(accesstoken=mapbox_access_token,
-                                       bearing=0,
-                                       center=dict(
-                                           lat=19.404,
-                                           lon=-99.17
-                                       ),
-                                       pitch=0,
-                                       zoom=12.2,
-                                       style='light'
-                                       ),
-                           )
-    )
-
-@app.callback(
-    dash.dependencies.Output('shortest_routes', 'figure'),
-    #dash.dependencies.Output('test', 'children'),
-    [dash.dependencies.Input('heatmap', 'clickData')])
-def show_shortest_path(path_info):
-    if path_info is not None:
-        origin_id = path_info['points'][0]['x']+1
-        destination_id = path_info['points'][0]['y']+1
-
-        opacitys = 0.5
-
-        sizes = 10
-
-        lats = network_df.loc[[origin_id,destination_id], 'lat']
-        lons = network_df.loc[[origin_id,destination_id], 'lon']
-
-    else:
-        origin_id, destination_id = tuple(np.random.randint(1,480,2))
-
-        opacitys = 0.5
-
-        sizes = 10
-
-        lats = network_df.loc[[origin_id, destination_id], 'lat']
-        lons = network_df.loc[[origin_id, destination_id], 'lon']
-
-    return go.Figure(
-        data = [go.Scattermapbox(lat = lats,
-                                 #lat=network_df['lat'],
-                                 lon = lons,
-                                 #lon=network_df['lon'],
-                                 mode='markers',
-                                 marker=dict(size=sizes,
-                                             color= '#FF9D1A',
-                                             opacity = opacitys),
-                                 text=network_df['name'],
-                                 name='Préstamos'
-                                 )
-                ],
-        layout = go.Layout(margin=dict(t=60,l = 60, r=60, b=60),
-                           autosize=False,
-                           width=1000,
-                           height=800,
-                           hovermode='closest',
-                           mapbox=dict(accesstoken=mapbox_access_token,
-                                       #layers =[dict(sourcetype = 'geojson',
-                                       #              source = route_dict,
-                                       #              color='rgb(0,0,230)',
-                                       #              type = 'line',
-                                       #              line=dict(width=1.5),
-                                       #              )
-                                       #         ],
                                        bearing=0,
                                        center=dict(
                                            lat=19.404,
