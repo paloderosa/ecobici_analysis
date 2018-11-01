@@ -67,6 +67,7 @@ def preprocess_travel_data():
                                                               travel_data['Hora_Retiro'], dayfirst=True)
             travel_data['Tiempo_Transcurrido'] = (travel_data['Fecha_Hora_Arribo'] - travel_data['Fecha_Hora_Retiro'])\
                 .astype('timedelta64[s]')
+
             # We no longer need separate date AND time columns
             #travel_data.drop(['Fecha_Retiro','Hora_Retiro','Fecha_Arribo','Hora_Arribo'], axis=1, inplace=True)
             travel_data.to_csv('data/' + name.split('/')[1])

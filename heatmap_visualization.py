@@ -25,8 +25,11 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css',
 
 # we load the ecobici network data
 network_df = pd.read_csv('data/ecobici_stations.csv', index_col=0)
+number_of_stations = len(network_df.index)
 station_names = network_df['name']
 station_names = station_names.apply(lambda name: ' '.join(name.split()[1:]))
+station_lats = network_df['lat']
+station_lons = network_df['lon']
 heatmap_text = [['de ' + station_names.loc[j] + ' a ' + station_names.loc[i] for j in range(1,481)] for i in range(1,481)]
 
 with open('data.json') as infile:
@@ -147,34 +150,34 @@ def show_shortest_path(path_info):
         origin_id = path_info['points'][0]['x']+1
         destination_id = path_info['points'][0]['y']+1
 
-        opacity = 0.9
-
-        size = 10
-
-        lats = network_df.loc[[origin_id,destination_id], 'lat']
-        lons = network_df.loc[[origin_id,destination_id], 'lon']
-
     else:
         origin_id, destination_id = tuple(np.random.randint(1,480,2))
 
-        opacity = 0.9
+    #text = network_df.loc[[origin_id, destination_id], 'name']
+    #lats = network_df.loc[[origin_id, destination_id], 'lat']
+    #lons = network_df.loc[[origin_id, destination_id], 'lon']
+    #size = 10
+    #color = ['#FF1A1A','#FF9D1A']
 
-        size = 10
-
-        lats = network_df.loc[[origin_id, destination_id], 'lat']
-        lons = network_df.loc[[origin_id, destination_id], 'lon']
+    text = station_names
+    lats = station_lats
+    lons = station_lons
+    size = [4] * number_of_stations
+    color = ['#FF9D1A'] * number_of_stations
+    color[origin_id-1] = '#FF9D1A'
+    color[destination_id-1] = '#FF1A1A'
+    size[origin_id-1] = 10
+    size[destination_id-1] = 10
 
     return go.Figure(
         data = [go.Scattermapbox(lat = lats,
-                                 #lat=network_df['lat'],
                                  lon = lons,
-                                 #lon=network_df['lon'],
                                  mode='markers',
                                  marker=dict(size=size,
-                                             color= '#FF9D1A',
-                                             opacity = opacity),
-                                 text=network_df['name'],
-                                 name='Préstamos'
+                                             color= color,
+                                             opacity = 0.9),
+                                 text=text,
+                                 name='Ruta más corta'
                                  )
                 ],
         layout = go.Layout(margin=dict(t=60,l = 60, r=60, b=60),
@@ -188,6 +191,13 @@ def show_shortest_path(path_info):
                                                      color='#FF9D1A',
                                                      opacity = 0.5,
                                                      type = 'line',
+                                                     line=dict(width=7),
+                                                     ),
+                                                dict(sourcetype='geojson',
+                                                     source=shortest_routes[str(destination_id) + ' to ' + str(origin_id)],
+                                                     color='#FF9D1A',
+                                                     opacity=0.2,
+                                                     type='line',
                                                      line=dict(width=7),
                                                      )
                                                 ],
