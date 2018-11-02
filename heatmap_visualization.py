@@ -5,8 +5,10 @@ import dash_html_components as html
 import plotly.graph_objs as go
 
 import json
+import pandas as pd
+import numpy as np
 
-from bike_service import *
+import base64
 
 
 # TODo: first row: heatmap with particular routes. on hover in the heatmap, show the particular route
@@ -47,6 +49,9 @@ Also, we produce this data and save it to disk. We prefer to produce the data of
 
 street_distances = np.load('data/street_distances.npy')
 
+logo_filename = 'images/ecobici_logo.jpg' # replace with your own image
+encoded_logo = base64.b64encode(open(logo_filename, 'rb').read())
+
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
@@ -55,10 +60,13 @@ We will arrange the data in several rows. The interactivity is supposed to exist
 """
 app.layout = html.Div(children=[
 
-    html.Nav(className = "nav nav-pills",
-             children=[html.Span('ecobicidata',
-                                 style = {'width': '300px', 'display': 'inline-block', 'font-size': 'xx-large'}),
-                       html.A('global', className="nav-item nav-link", href='/apps/App1',
+    html.Div([
+
+        html.Span('ecobicidata',
+              style = {'width': '300px', 'display': 'inline-block', 'font-size': 'xx-large', 'vertical-align': 'middle'}),
+
+        html.Nav(className = "nav nav-pills",
+             children=[html.A('global', className="nav-item nav-link", href='/apps/App1',
                               style={'width': '200px', 'display': 'inline-block'}),
                        html.A('estaciones', className="nav-item nav-link", href='/apps/App1',
                               style={'width': '200px', 'display': 'inline-block'}),
@@ -66,10 +74,14 @@ app.layout = html.Div(children=[
                               style={'width': '200px', 'display': 'inline-block'}),
                        html.A('predicción', className="nav-item nav-link active", href='/apps/App3',
                               style={'width': '200px', 'display': 'inline-block'})
-                       ]
+                       ], style = {'display': 'inline-block', 'vertical-align': 'middle'}
              ),
 
+        html.Img(src='data:image/jpg;base64,{}'.format(encoded_logo.decode()),
+             style = {'display': 'inline-block', 'height': '100px', 'vertical-align': 'middle'}),
 
+    ], style={'height': '100px', 'margin': 'auto', 'width': '80%'}
+    ),
     # Here start the visualizations in the first row.
 
 
