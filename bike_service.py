@@ -8,6 +8,7 @@ import random
 
 import os.path
 
+import json
 
 class BikeService(object):
 
@@ -70,8 +71,18 @@ class BikeService(object):
         # selects nodes belonging or not to the stations and colors and scales them differently
         nc = np.where(self.graph_nodes.isin(self.network_df['node']), c, 'g')
         ns = np.where(self.graph_nodes.isin(self.network_df['node']), s, 0)
-        ox.plot_graph(self.location_graph, fig_height = 50, node_size = ns, node_color = nc, node_zorder = 2, edge_alpha = 0.5,
-        save = save, filename = self.name + '_map', dpi = 100, edge_color = 'white', bgcolor = 'black')
+        ox.plot_graph(
+            G = self.location_graph,
+            fig_height = 50,
+            node_size = ns,
+            node_color = nc,
+            node_zorder = 2,
+            edge_alpha = 0.5,
+            save = save,
+            filename = self.name + '_map',
+            dpi = 100,
+            edge_color = 'white',
+            bgcolor = 'black')
 
         return None
 
@@ -115,9 +126,13 @@ class BikeService(object):
                         origin_node = self.network_df.loc[origin_id]['node']
                         destination_node = self.network_df.loc[destination_id]['node']
                         try:
-                            route = nx.shortest_path(self.location_graph, origin_node, destination_node)
-                            distances[origin_id - 1, destination_id - 1] = sum([self.location_graph.get_edge_data(u, v)[0]['length']
-                                                                                for u,v in zip(route, route[1:])])
+                            route = nx.shortest_path(
+                                self.location_graph,
+                                origin_node,
+                                destination_node)
+                            distances[origin_id - 1, destination_id - 1] = sum([
+                                self.location_graph.get_edge_data(u, v)[0]['length'] for u,v in zip(route, route[1:])
+                            ])
                         except:
                             distances[origin_id - 1, destination_id - 1] = np.nan
 
@@ -159,10 +174,11 @@ class BikeService(object):
             min_distances = np.nanmin(distances, axis=1)
             closest_stations = np.nanargmin(distances, axis=1) + 1
 
-            voronoi_df = pd.concat([pd.Series(nodes, index=nodes.index, name='node'),
-                                    pd.Series(closest_stations, index=nodes.index, name='nearest station'),
-                                    pd.Series(min_distances, index=nodes.index, name='distances')],
-                                   axis=1)
+            voronoi_df = pd.concat([
+                pd.Series(nodes, index=nodes.index, name='node'),
+                pd.Series(closest_stations, index=nodes.index, name='nearest station'),
+                pd.Series(min_distances, index=nodes.index, name='distances')],
+                axis=1)
 
             voronoi_df.to_csv('data/voronoi_df.csv')
 
@@ -180,8 +196,20 @@ class BikeService(object):
         nc = ['gray'] * len(self.graph_nodes)
         for index, closest_station_data in voronoi_df.iterrows():
             nc[index] = color[int(closest_station_data['nearest station']) - 1]
-        ox.plot_graph(self.location_graph, fig_height=50, node_size=100, node_color=nc,node_zorder=2, edge_alpha=0.5,
-                      save=save, filename='voronoi_cdmx', dpi=100, edge_color='white', bgcolor='black')
+        ox.plot_graph(
+            G=self.location_graph,
+            fig_height=50,
+            node_size=100,
+            node_color=nc,
+            node_zorder=2,
+            edge_alpha=0.5,
+            save=save,
+            filename='voronoi_cdmx',
+            dpi=100,
+            edge_color='white',
+            bgcolor='black'
+        )
+
         return None
 
 
@@ -223,8 +251,44 @@ class BikeService(object):
         lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index, unit='s') \
                                          + initial_date
 
-        return {'take': take_by_time_units[['datetime', 'retiros (' + str(time_window) + ' s)']],
-                'lock': lock_by_time_units[['datetime', 'arribos (' + str(time_window) + ' s)']]}
+        return {
+            'take': take_by_time_units[['datetime', 'retiros (' + str(time_window) + ' s)']],
+            'lock': lock_by_time_units[['datetime', 'arribos (' + str(time_window) + ' s)']]
+        }
+
+    def all_shortest_routes_json(self):
+        """
+        Produce an enormous json file with geojson dictionary with the following information:
+            keys: 'initial station_id to final station_id', for example, '5 to 451'.
+            values: lats and lots of all the nodes for a shortest route.
+        The data is saved to 'data/shortest_routes.json'
+        :return: None
+        """
+
+        routes_dict = {}
+
+        with open('data/shortest_routes.json') as infile:
+            routes_dict = json.load(infile)
+
+        for i in range(1, self.size + 1):
+            print('rutas desde {}'.format(self.network_df.loc[i, 'name']))
+            for j in range(1, self.size + 1):
+                if (str(i) + ' to ' + str(j)) not in routes_dict:
+                    routes_dict[str(i) + ' to ' + str(j)] = self.station(i).shortest_path_json(j)
+
+        with open('data/shortest_routes.json', 'w') as outfile:
+            json.dump(routes_dict, outfile)
+
+        return None
+
+    def travel_speed(self):
+        street_distances = self.stations_distances('street')
+
+        self.activity_df['speed'] = self.activity_df.apply(
+            lambda x: street_distances[x['Ciclo_Estacion_Retiro']-1, x['Ciclo_Estacion_Arribo']-1]/x['Tiempo_Transcurrido'],
+            axis=1)
+
+        return None
 
 
     def station(self, station_id):
@@ -255,7 +319,9 @@ class BikeService(object):
             """
             destination_node = self.bike_service_instance.network_df.loc[destination_id]['node']
             try:
-                route = nx.shortest_path(self.bike_service_instance.location_graph, self.station_node, destination_node)
+                route = nx.shortest_path(
+                    self.bike_service_instance.location_graph,
+                    self.station_node, destination_node)
             except:
                 route = [self.station_node]
             return route
@@ -294,13 +360,21 @@ class BikeService(object):
                 east = max(path_coords_x)
                 west = min(path_coords_x)
 
-                temp_graph = ox.truncate_graph_bbox(self.bike_service_instance.location_graph,
-                                                    north=north, south=south, east=east, west=west)
+                temp_graph = ox.truncate_graph_bbox(
+                    G=self.bike_service_instance.location_graph,
+                    north=north,
+                    south=south,
+                    east=east,
+                    west=west)
 
             else:
                 temp_graph = self.bike_service_instance.location_graph
 
-            ox.plot_graph_route(temp_graph, path, fig_height=30, node_size=0)
+            ox.plot_graph_route(
+                temp_graph,
+                path,
+                fig_height=30,
+                node_size=0)
 
             return None
 
@@ -332,29 +406,39 @@ class BikeService(object):
             for destination_id in range(1, self.bike_service_instance.size + 1):
                 if destination_id in from_station.groups:
                     current_group = from_station.get_group(destination_id)
-                    des_list.append([destination_id,
-                                     self.bike_service_instance.network_df['node'].loc[destination_id],
-                                     current_group['Bici'].count(),
-                                     current_group['Tiempo_Transcurrido'].mean(),
-                                     ox.utils.great_circle_vec(
-                                         *tuple(self.bike_service_instance.network_df.loc[self.station_id][['lat', 'lon']]),
-                                         *tuple(self.bike_service_instance.network_df.loc[destination_id][['lat', 'lon']]))])
+                    des_list.append([
+                        destination_id,
+                        self.bike_service_instance.network_df['node'].loc[destination_id],
+                        current_group['Bici'].count(),
+                        current_group['Tiempo_Transcurrido'].mean(),
+                        ox.utils.great_circle_vec(
+                            *tuple(self.bike_service_instance.network_df.loc[self.station_id][['lat', 'lon']]),
+                            *tuple(self.bike_service_instance.network_df.loc[destination_id][['lat', 'lon']])
+                        )
+                    ])
 
             for origin_id in range(1, self.bike_service_instance.size + 1):
                 if origin_id in to_station.groups:
                     current_group = to_station.get_group(origin_id)
-                    ori_list.append([origin_id,
-                                     self.bike_service_instance.network_df['node'].loc[origin_id],
-                                     current_group['Bici'].count(),
-                                     current_group['Tiempo_Transcurrido'].mean(),
-                                     ox.utils.great_circle_vec(
-                                         *tuple(self.bike_service_instance.network_df.loc[self.station_id][['lat', 'lon']]),
-                                         *tuple(self.bike_service_instance.network_df.loc[origin_id][['lat', 'lon']]))])
+                    ori_list.append([
+                        origin_id,
+                        self.bike_service_instance.network_df['node'].loc[origin_id],
+                        current_group['Bici'].count(),
+                        current_group['Tiempo_Transcurrido'].mean(),
+                        ox.utils.great_circle_vec(
+                            *tuple(self.bike_service_instance.network_df.loc[self.station_id][['lat', 'lon']]),
+                            *tuple(self.bike_service_instance.network_df.loc[origin_id][['lat', 'lon']])
+                        )
+                    ])
 
-            return {'to': pd.DataFrame(des_list,
-                                       columns=['Destino', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']),
-                    'from': pd.DataFrame(ori_list,
-                                         columns=['Origen', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia'])}
+            return {
+                'to': pd.DataFrame(
+                    des_list,
+                    columns=['Destino', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia']),
+                'from': pd.DataFrame(
+                    ori_list,
+                    columns=['Origen', 'node', 'Numero de Viajes', 'Tiempo medio', 'Distancia'])
+            }
 
         def connections_subgraph(self, destination=True, origin=True):
             """
@@ -377,7 +461,11 @@ class BikeService(object):
                 connections_nodes = connections['from']['node']
 
             if connections_nodes.shape[0] == 0:
-                sub_graph = ox.truncate_graph_dist(self.bike_service_instance.location_graph, self.station_node, 1000)
+                sub_graph = ox.truncate_graph_dist(
+                    G=self.bike_service_instance.location_graph,
+                    self.station_node,
+                    1000
+                )
 
             else:
                 connections_data_x_coords = [self.bike_service_instance.location_graph.node[node]['x']
@@ -392,8 +480,14 @@ class BikeService(object):
                 east = max(connections_data_x_coords)
                 west = min(connections_data_x_coords)
 
-                sub_graph = ox.truncate_graph_bbox(self.bike_service_instance.location_graph, north=north,
-                                                   south=south, east=east, west=west, truncate_by_edge=True)
+                sub_graph = ox.truncate_graph_bbox(
+                    self.bike_service_instance.location_graph,
+                    north=north,
+                    south=south,
+                    east=east,
+                    west=west,
+                    truncate_by_edge=True
+                )
 
             return sub_graph
 
@@ -438,7 +532,13 @@ class BikeService(object):
             nc[graph_nodes[graph_nodes == node_center].index[0]] = 'orange'
             ns[graph_nodes[graph_nodes == node_center].index[0]] = 100
 
-            ox.plot_graph(current_graph, fig_height=30, node_size=ns, node_color=nc, node_zorder=2)
+            ox.plot_graph(
+                current_graph,
+                fig_height=30,
+                node_size=ns,
+                node_color=nc,
+                node_zorder=2
+            )
 
             return None
 
@@ -465,12 +565,14 @@ class BikeService(object):
             take_df = self.bike_service_instance.activity_df[
                 (self.bike_service_instance.activity_df['Ciclo_Estacion_Retiro'] == self.station_id) &
                 (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] >= initial_date) &
-                (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] <= final_date)]
+                (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] <= final_date)
+            ]
 
             lock_df = self.bike_service_instance.activity_df[
                 (self.bike_service_instance.activity_df['Ciclo_Estacion_Arribo'] == self.station_id) &
                 (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] >= initial_date) &
-                (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] <= final_date)]
+                (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] <= final_date)
+            ]
 
             take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]')//time_window
             lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]')//time_window
