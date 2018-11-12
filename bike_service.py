@@ -10,12 +10,12 @@ import os.path
 
 import json
 
+
 class BikeService(object):
 
     def __init__(self, name, location, network_df, activity_df, load_from_saved=True):
         """
-
-        :param name: string
+        :param name: str
             Name for the network.
         :param location: list
             List of locations from which osmnx can retrieve geographical data.
@@ -46,7 +46,7 @@ class BikeService(object):
 
         # related to the stations
         self.network_df = network_df[['name', 'lat', 'lon']].copy()
-        self.network_df['node'] = network_df[['lat', 'lon']].\
+        self.network_df['node'] = network_df[['lat', 'lon']]. \
             apply(lambda site: ox.get_nearest_node(self.location_graph, tuple(site)), axis=1)
         self.size = len(network_df)
 
@@ -58,13 +58,15 @@ class BikeService(object):
         # internal workings
         self.__load_from_saved = load_from_saved
 
-    def map(self, c='r', s=100, save = False):
+    def map(self, c='r', s=100, save=False):
         """
         Plot containing the geographic area with the stations' locations contained in self.location_graph
         :param c: color code, optional
             Color for the stations
         :param s: int, optional
             Dot size for the stations
+        :param save: bool, optional, default False
+            Whether to save the graph to a file
         :return: None
         """
 
@@ -72,17 +74,17 @@ class BikeService(object):
         nc = np.where(self.graph_nodes.isin(self.network_df['node']), c, 'g')
         ns = np.where(self.graph_nodes.isin(self.network_df['node']), s, 0)
         ox.plot_graph(
-            G = self.location_graph,
-            fig_height = 50,
-            node_size = ns,
-            node_color = nc,
-            node_zorder = 2,
-            edge_alpha = 0.5,
-            save = save,
-            filename = self.name + '_map',
-            dpi = 100,
-            edge_color = 'white',
-            bgcolor = 'black')
+            self.location_graph,
+            fig_height=50,
+            node_size=ns,
+            node_color=nc,
+            node_zorder=2,
+            edge_alpha=0.5,
+            save=save,
+            filename=self.name + '_map',
+            dpi=100,
+            edge_color='white',
+            bgcolor='black')
 
         return None
 
@@ -131,7 +133,7 @@ class BikeService(object):
                                 origin_node,
                                 destination_node)
                             distances[origin_id - 1, destination_id - 1] = sum([
-                                self.location_graph.get_edge_data(u, v)[0]['length'] for u,v in zip(route, route[1:])
+                                self.location_graph.get_edge_data(u, v)[0]['length'] for u, v in zip(route, route[1:])
                             ])
                         except:
                             distances[origin_id - 1, destination_id - 1] = np.nan
@@ -184,8 +186,7 @@ class BikeService(object):
 
         return voronoi_df
 
-
-    def voronoi_plot(self, save = False, seed = None):
+    def voronoi_plot(self, save=False, seed=None):
         voronoi_df = self.voronoi_cells_df()
         number_of_colors = self.size
 
@@ -211,7 +212,6 @@ class BikeService(object):
         )
 
         return None
-
 
     def activity_ts(self, initial_date, final_date, time_window):
         """
@@ -241,12 +241,12 @@ class BikeService(object):
         take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]') // time_window
         lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]') // time_window
 
-        take_by_time_units = take_df.groupby('time_units').count()\
-            .rename(columns = {'Genero_Usuario': 'retiros (' + str(time_window) + ' s)'})
+        take_by_time_units = take_df.groupby('time_units').count() \
+            .rename(columns={'Genero_Usuario': 'retiros (' + str(time_window) + ' s)'})
         take_by_time_units['datetime'] = pd.to_timedelta(time_window * take_by_time_units.index, unit='s') \
                                          + initial_date
 
-        lock_by_time_units = lock_df.groupby('time_units').count()\
+        lock_by_time_units = lock_df.groupby('time_units').count() \
             .rename(columns={'Genero_Usuario': 'arribos (' + str(time_window) + ' s)'})
         lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index, unit='s') \
                                          + initial_date
@@ -280,16 +280,6 @@ class BikeService(object):
             json.dump(routes_dict, outfile)
 
         return None
-
-    def travel_speed(self):
-        street_distances = self.stations_distances('street')
-
-        self.activity_df['speed'] = self.activity_df.apply(
-            lambda x: street_distances[x['Ciclo_Estacion_Retiro']-1, x['Ciclo_Estacion_Arribo']-1]/x['Tiempo_Transcurrido'],
-            axis=1)
-
-        return None
-
 
     def station(self, station_id):
         """
@@ -328,7 +318,8 @@ class BikeService(object):
 
         def shortest_path_json(self, destination_id):
             path_nodes = self.shortest_path(destination_id)
-            node_data = ox.graph_to_gdfs(self.bike_service_instance.location_graph, edges=False).loc[path_nodes][['x', 'y']]
+            node_data = ox.graph_to_gdfs(self.bike_service_instance.location_graph, edges=False).loc[path_nodes][
+                ['x', 'y']]
             node_dict = {'type': 'Feature',
                          'properties': {},
                          'geometry': {'type': 'LineString',
@@ -337,7 +328,6 @@ class BikeService(object):
                          }
 
             return node_dict
-
 
         def plot_shortest_path(self, destination_id, truncate=True):
             """
@@ -394,10 +384,10 @@ class BikeService(object):
             """
 
             from_station = self.bike_service_instance.activity_df[
-                self.bike_service_instance.activity_df['Ciclo_Estacion_Retiro'] == self.station_id].\
+                self.bike_service_instance.activity_df['Ciclo_Estacion_Retiro'] == self.station_id]. \
                 groupby('Ciclo_Estacion_Arribo')
             to_station = self.bike_service_instance.activity_df[
-                self.bike_service_instance.activity_df['Ciclo_Estacion_Arribo'] == self.station_id].\
+                self.bike_service_instance.activity_df['Ciclo_Estacion_Arribo'] == self.station_id]. \
                 groupby('Ciclo_Estacion_Retiro')
 
             des_list = []
@@ -452,7 +442,7 @@ class BikeService(object):
             assert destination or origin, 'At least destination or origin connections must be chosen'
 
             connections = self.connections()
-            
+
             if destination and origin:
                 connections_nodes = pd.concat([connections['to']['node'], connections['from']['node']])
             elif destination:
@@ -462,7 +452,7 @@ class BikeService(object):
 
             if connections_nodes.shape[0] == 0:
                 sub_graph = ox.truncate_graph_dist(
-                    G=self.bike_service_instance.location_graph,
+                    self.bike_service_instance.location_graph,
                     self.station_node,
                     1000
                 )
@@ -504,7 +494,7 @@ class BikeService(object):
             assert destination or origin, 'At least destination or origin connections must be chosen'
 
             connections = self.connections()
-            
+
             if truncate:
                 current_graph = self.connections_subgraph(destination, origin)
             else:
@@ -566,26 +556,28 @@ class BikeService(object):
                 (self.bike_service_instance.activity_df['Ciclo_Estacion_Retiro'] == self.station_id) &
                 (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] >= initial_date) &
                 (self.bike_service_instance.activity_df['Fecha_Hora_Retiro'] <= final_date)
-            ]
+                ]
 
             lock_df = self.bike_service_instance.activity_df[
                 (self.bike_service_instance.activity_df['Ciclo_Estacion_Arribo'] == self.station_id) &
                 (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] >= initial_date) &
                 (self.bike_service_instance.activity_df['Fecha_Hora_Arribo'] <= final_date)
-            ]
+                ]
 
-            take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype('timedelta64[s]')//time_window
-            lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype('timedelta64[s]')//time_window
+            take_df['time_units'] = (take_df['Fecha_Hora_Retiro'] - initial_date).astype(
+                'timedelta64[s]') // time_window
+            lock_df['time_units'] = (lock_df['Fecha_Hora_Arribo'] - initial_date).astype(
+                'timedelta64[s]') // time_window
 
-            take_by_time_units = take_df.groupby('time_units').count()\
-                .rename(columns={'Genero_Usuario': 'retiros (' + str(time_window) + ' s)'})
-            take_by_time_units['datetime'] = pd.to_timedelta(time_window * take_by_time_units.index, unit='s') \
-                                             + initial_date
+            take_by_time_units = take_df.groupby('time_units').count().rename(
+                columns={'Genero_Usuario': 'retiros (' + str(time_window) + ' s)'})
+            take_by_time_units['datetime'] = pd.to_timedelta(time_window * take_by_time_units.index,
+                                                             unit='s') + initial_date
 
-            lock_by_time_units = lock_df.groupby('time_units').count() \
-                .rename(columns={'Genero_Usuario': 'arribos (' + str(time_window) + ' s)'})
-            lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index, unit='s') \
-                                             + initial_date
+            lock_by_time_units = lock_df.groupby('time_units').count().rename(
+                columns={'Genero_Usuario': 'arribos (' + str(time_window) + ' s)'})
+            lock_by_time_units['datetime'] = pd.to_timedelta(time_window * lock_by_time_units.index,
+                                                             unit='s') + initial_date
 
             return {'take': take_by_time_units[['datetime', 'retiros (' + str(time_window) + ' s)']],
                     'lock': lock_by_time_units[['datetime', 'arribos (' + str(time_window) + ' s)']]}

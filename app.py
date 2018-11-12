@@ -2,6 +2,7 @@
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
+from plotly import tools
 import plotly.graph_objs as go
 
 import json
@@ -10,11 +11,6 @@ import numpy as np
 
 import base64
 
-
-
-
-# TODO: show overall statistics: by sex, by weekday, by day, by month, by time.
-# this on the left. on the right, a map with the dots
 
 
 mapbox_access_token = 'pk.eyJ1IjoicGFsb2Rlcm9zYSIsImEiOiJjam5wajQzZXIydDBvM3Bvanh3NDR2bWR3In0.T9up8wLMrjeV4Gp0YfCSgA'
@@ -26,7 +22,6 @@ external_stylesheets = [
 external_scripts = [
     'https://npmcdn.com/@turf/turf/turf.min.js'
 ]
-
 
 # we load the ecobici network data
 network_df = pd.read_csv('data/ecobici_stations.csv', index_col=0)
@@ -62,8 +57,9 @@ logo_filename = 'images/ecobici_logo.jpg' # replace with your own image
 encoded_logo = base64.b64encode(open(logo_filename, 'rb').read())
 
 sex_dict = {
-        'F': ['Mujeres', '#DE6D25'],
-        'M': ['Hombres', '#A19F9F']
+        'F': ['Mujeres', '#a44200'],
+        'M': ['Hombres', '#bc8034'],
+        'A': ['Todos', '#32936f'],
     }
 
 app = dash.Dash(
@@ -86,7 +82,8 @@ app.layout = html.Div(children=[
                 'width': '300px',
                 'display': 'inline-block',
                 'font-size': 'xx-large',
-                'vertical-align': 'middle'
+                'vertical-align': 'middle',
+                'color': 'gray'
             }
         ),
 
@@ -165,7 +162,8 @@ app.layout = html.Div(children=[
                             reversescale=True,
                             showlegend=False,
                             showscale=False,
-                            text = heatmap_text
+                            text = heatmap_text,
+                            hoverinfo='text+z'
                         )
                     ],
                     layout=go.Layout(
@@ -224,7 +222,7 @@ app.layout = html.Div(children=[
 
         html.Div(
             dcc.Slider(
-                id='crossfilter-year--slider',
+                id='crossfilter-day--slider',
                 min=1,
                 max=31,
                 value=31,
@@ -252,28 +250,30 @@ app.layout = html.Div(children=[
     ],
         style = {
             'height': '800px',
-            'width': '100%'
+            'width': '100%',
+            'margin': '20px 20px 100px 20px',
         }
     ),
 
 
     # here start the visualizations in the third row.
-    #html.Div([
-        #html.Div(
-        #    dcc.Graph(id = 'sex-count-by-day'),
-        #),
-
-        #html.Div(
-
-        #),
-
-        #html.Div(
-
-        #)
-    #])
+    html.Div([
+        html.Div(
+            dcc.Graph(id = 'motion-data-by-day'),
+            style={
+                'width': '100%',
+                'display': 'inline-block'
+            }
+        ),
+    ],
+        style={
+            'height': '1000px',
+            'width': '100%'
+        }
+    )
 ],
     style = {
-        'width': '100%',
+        'width': '95%',
         'margin': 'auto',
         'position': 'relative'
     }
@@ -356,11 +356,11 @@ def show_shortest_path(path_info):
         )
     )
 
-# by clicking on a particular day, we display in the mapbox map two circles around each station with size given the
+# by clicking on a particular day, we display in the mapbox map two circles around each station with size given by the
 # number of trips from and to that station for that particular day.
 @app.callback(
     dash.dependencies.Output('overall_activity', 'figure'),
-    [dash.dependencies.Input('crossfilter-year--slider', 'value')])
+    [dash.dependencies.Input('crossfilter-day--slider', 'value')])
 def show_activity_by_day(day_value):
     activity_df_take = activity_df[activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/01/2018']\
         .groupby('Ciclo_Estacion_Retiro').count()
@@ -405,7 +405,7 @@ def show_activity_by_day(day_value):
             )
         ],
         layout = go.Layout(
-            margin=dict(t=60,l = 60, r=60, b=60),
+            margin=dict(t=60, l=60, r=60, b=60),
             autosize=False,
             #width=1000,
             height=900,
@@ -418,7 +418,7 @@ def show_activity_by_day(day_value):
                     lon=-99.17
                 ),
                 pitch=0,
-                zoom=12.2,
+                zoom=12.4,
                 style='light'
             ),
         )
@@ -426,9 +426,9 @@ def show_activity_by_day(day_value):
 
 @app.callback(
     dash.dependencies.Output('sex-count-by-day', 'figure'),
-    [dash.dependencies.Input('crossfilter-year--slider', 'value')])
+    [dash.dependencies.Input('crossfilter-day--slider', 'value')])
 def show_sex_by_day(day_value):
-    df = activity_df[['Genero_Usuario','Fecha_Retiro']][activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/01/2018']
+    df = activity_df[['Genero_Usuario', 'Fecha_Retiro']][activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/01/2018']
     df_by_sex = df.groupby('Genero_Usuario').count().reset_index()
 
     return go.Figure(
@@ -436,17 +436,19 @@ def show_sex_by_day(day_value):
             go.Pie(
                 values = df_by_sex['Fecha_Retiro'],
                 labels = [sex_dict[sex][0] for sex in df_by_sex['Genero_Usuario']],
-                #name = 'Usuarios por sexo',
+                name = 'Usuarios por sexo',
                 hoverinfo = 'label+percent',
                 hole = 0.4,
                 marker=dict(
                     colors = [sex_dict[sex][1] for sex in df_by_sex['Genero_Usuario']],
-                    line=dict(color='white', width=1)
+                    line=dict(color='white', width=1),
                 ),
+                opacity=1
             )
         ],
         layout=go.Layout(
-            margin=dict(t=20, r=0, b=40),
+            showlegend = False,
+            margin=dict(t=20, r=200, b=0, l = 200),
             # title='Usuarios por sexo ' + '{:02d}'.format(day_value) + '/01/2018',
             annotations=[dict(
                 font = dict(
@@ -462,7 +464,7 @@ def show_sex_by_day(day_value):
 
 @app.callback(
     dash.dependencies.Output('age-sex-by-day', 'figure'),
-    [dash.dependencies.Input('crossfilter-year--slider', 'value')])
+    [dash.dependencies.Input('crossfilter-day--slider', 'value')])
 def show_age_sex_by_day(day_value):
     df = activity_df[['Genero_Usuario','Edad_Usuario','Fecha_Retiro']][activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/01/2018']
     df_f = df[df['Genero_Usuario'] == 'F']
@@ -479,7 +481,7 @@ def show_age_sex_by_day(day_value):
                 orientation='h',
                 name='Hombres',
                 marker=dict(color=sex_dict['M'][1]),
-                hoverinfo='skip',
+                hoverinfo='x+y+name',
                 ybins=dict(
                     start=df_m['Edad_Usuario'].min(),
                     end=df_m['Edad_Usuario'].max(),
@@ -488,11 +490,11 @@ def show_age_sex_by_day(day_value):
             ),
             go.Histogram(
                 y=df_f['Edad_Usuario'],
-                x=-1*np.ones(len(df_m)),
+                x=-1*np.ones(len(df_f)),
                 orientation='h',
                 name='Mujeres',
                 marker=dict(color=sex_dict['F'][1]),
-                hoverinfo='skip',
+                hoverinfo='x+y+name',
                 histfunc = 'sum',
                 ybins=dict(
                     start=df_f['Edad_Usuario'].min(),
@@ -505,7 +507,7 @@ def show_age_sex_by_day(day_value):
             margin=dict(t=20, r=0, b=40),
             barmode='overlay',
             yaxis=go.layout.YAxis(
-                range=[16, 80],
+                range=[15, 80],
                 #range=[df['Edad_Usuario'].min(), df['Edad_Usuario'].max()],
                 title='Edad'),
             xaxis=go.layout.XAxis(
@@ -517,8 +519,143 @@ def show_age_sex_by_day(day_value):
             )
         )
 
+@app.callback(
+    dash.dependencies.Output('motion-data-by-day', 'figure'),
+    [dash.dependencies.Input('crossfilter-day--slider', 'value')])
+def motion_data_by_day(day_value):
+    df = activity_df[activity_df['Fecha_Retiro'] == '{:02d}'.format(day_value) + '/01/2018']
+    df = df[
+        (0 < df['Tiempo_Transcurrido'])
+        & (df['Tiempo_Transcurrido'] <= 2700)
+        & (df['Distancia'] > 0)
+    ]
+
+    df_f = df[df['Genero_Usuario']=='F']
+    df_m = df[df['Genero_Usuario'] == 'M']
+
+    trace1a = go.Histogram(
+        y = df_m['Tiempo_Transcurrido'],
+        name = 'Hombres',
+        orientation='h',
+        marker=dict(color=sex_dict['M'][1]),
+        hoverinfo='x+y+name',
+        ybins=dict(
+            start = 0,
+            end = 2700,
+            size = 60,
+        )
+    )
+
+    trace1b = go.Histogram(
+        y=df_f['Tiempo_Transcurrido'],
+        x=-1*np.ones(len(df_f)),
+        name='Mujeres',
+        orientation='h',
+        marker=dict(color=sex_dict['F'][1]),
+        hoverinfo='x+y+name',
+        histfunc='sum',
+        ybins=dict(
+            start=0,
+            end=2700,
+            size=60,
+        )
+    )
+
+    trace2a = go.Histogram(
+        y=df_m['Distancia'],
+        name='Hombres',
+        orientation='h',
+        marker=dict(color=sex_dict['M'][1]),
+        hoverinfo='x+y+name',
+        ybins=dict(
+            start=0,
+            end=16000,
+            size=400,
+        )
+    )
+
+    trace2b = go.Histogram(
+        y=df_f['Distancia'],
+        x=-1 * np.ones(len(df_f)),
+        name='Mujeres',
+        orientation='h',
+        marker=dict(color=sex_dict['F'][1]),
+        hoverinfo='x+y+name',
+        histfunc='sum',
+        ybins=dict(
+            start=0,
+            end=16000,
+            size=400,
+        )
+    )
+
+    trace3a = go.Histogram(
+        y=df_m['Rapidez'],
+        name='Hombres',
+        orientation='h',
+        marker=dict(color=sex_dict['M'][1]),
+        hoverinfo='x+y+name',
+        ybins=dict(
+            start=0,
+            end=14,
+            size=0.5,
+        )
+    )
+
+    trace3b = go.Histogram(
+        y=df_f['Rapidez'],
+        x=-1 * np.ones(len(df_f)),
+        name='Mujeres',
+        orientation='h',
+        marker=dict(color=sex_dict['F'][1]),
+        hoverinfo='x+y+name',
+        histfunc='sum',
+        ybins=dict(
+            start=0,
+            end=14,
+            size=0.5,
+        )
+    )
+
+    fig = tools.make_subplots(
+        rows=1,
+        cols=3,
+        subplot_titles=(
+            'Tiempo transcurrido',
+            'Distancia recorrida',
+            'Rapidez promedio'
+        )
+    )
+
+    fig['layout'].update(
+        height=600,
+        bargap=0.1,
+        showlegend=False,
+        margin=dict(t=100, b=40, r=0),
+        barmode='overlay',
+    )
+
+    fig['layout']['xaxis1'].update(
+        tickvals=list(range(-3000,3100,100)),
+    )
+
+    fig['layout']['xaxis2'].update(
+        tickvals=[-2000,-1500,-1000, -500, 0, -500, 1000, 1500, 2000, 2500, 3000],
+    )
+
+    fig['layout']['xaxis3'].update(
+        tickvals=[-2000, -1500, -1000, -500, 0, -500, 1000, 1500, 2000, 2500, 3000],
+    )
+
+    fig.append_trace(trace1a, 1, 1)
+    fig.append_trace(trace1b, 1, 1)
+    fig.append_trace(trace2a, 1, 2)
+    fig.append_trace(trace2b, 1, 2)
+    fig.append_trace(trace3a, 1, 3)
+    fig.append_trace(trace3b, 1, 3)
 
 
+    return fig
 
 
 if __name__ == '__main__':
